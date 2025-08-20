@@ -211,7 +211,7 @@
     <h2>Bus Summary</h2>
     <div id="busSummary">
       <div class="message">
-        Loading attendees data... If this takes too long, check your Supabase connection.
+        Loading attendees data...
       </div>
     </div>
   </div>
@@ -280,7 +280,7 @@
         // Clear form
         fileInput.value = '';
         
-        // Refresh summary
+        // Refresh summary - USE THE SAME DATA SOURCE
         loadSummary();
         
       } catch (error) {
@@ -289,7 +289,7 @@
       }
     }
     
-    // Load summary function
+    // Load summary function - FIXED TO USE LOCALSTORAGE CONSISTENTLY
     async function loadSummary() {
       const summaryDiv = document.getElementById('busSummary');
       
@@ -300,18 +300,20 @@
           .select('*');
         
         if (error) {
-          console.error('Supabase error, using demo data:', error);
-          // Fall back to demo data
-          const demoData = JSON.parse(localStorage.getItem('attendees') || '[]');
-          renderSummary(demoData);
+          console.error('Supabase error, using localStorage data:', error);
+          // Use localStorage data consistently
+          const localStorageData = JSON.parse(localStorage.getItem('attendees') || '[]');
+          renderSummary(localStorageData);
         } else {
-          renderSummary(attendees);
+          // If Supabase works, also save to localStorage for consistency
+          localStorage.setItem('attendees', JSON.stringify(attendees || []));
+          renderSummary(attendees || []);
         }
       } catch (err) {
         console.error('Error loading data:', err);
-        // Use demo data if there's an error
-        const demoData = JSON.parse(localStorage.getItem('attendees') || '[]');
-        renderSummary(demoData);
+        // Use localStorage data if there's an error
+        const localStorageData = JSON.parse(localStorage.getItem('attendees') || '[]');
+        renderSummary(localStorageData);
       }
     }
     
@@ -375,7 +377,7 @@
       `;
     }
     
-    // Delete functions
+    // Delete functions - FIXED TO USE LOCALSTORAGE CONSISTENTLY
     async function deleteOne(id) {
       if (!confirm("Are you sure you want to delete this attendee?")) return;
       
@@ -386,11 +388,13 @@
           .delete()
           .eq('id', id);
         
+        // Always update localStorage for consistency
+        const attendees = JSON.parse(localStorage.getItem('attendees') || '[]');
+        const updatedAttendees = attendees.filter(a => a.id !== id);
+        localStorage.setItem('attendees', JSON.stringify(updatedAttendees));
+        
         if (error) {
-          // Fall back to local storage for demo
-          const attendees = JSON.parse(localStorage.getItem('attendees') || '[]');
-          const updatedAttendees = attendees.filter(a => a.id !== id);
-          localStorage.setItem('attendees', JSON.stringify(updatedAttendees));
+          console.error('Supabase delete error:', error);
         }
         
         showMessage("Attendee deleted successfully", "success");
@@ -411,11 +415,13 @@
           .delete()
           .eq('bus_number', bus);
         
+        // Always update localStorage for consistency
+        const attendees = JSON.parse(localStorage.getItem('attendees') || '[]');
+        const updatedAttendees = attendees.filter(a => a.bus_number !== bus);
+        localStorage.setItem('attendees', JSON.stringify(updatedAttendees));
+        
         if (error) {
-          // Fall back to local storage for demo
-          const attendees = JSON.parse(localStorage.getItem('attendees') || '[]');
-          const updatedAttendees = attendees.filter(a => a.bus_number !== bus);
-          localStorage.setItem('attendees', JSON.stringify(updatedAttendees));
+          console.error('Supabase delete error:', error);
         }
         
         showMessage(`All attendees from Bus ${bus} deleted successfully`, "success");
