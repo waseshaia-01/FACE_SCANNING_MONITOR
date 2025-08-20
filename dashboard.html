@@ -1,0 +1,96 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bus Dashboard</title>
+  <script src="https://unpkg.com/@supabase/supabase-js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { text-align: center; }
+    .accordion { margin: 10px 0; border: 1px solid #ccc; border-radius: 6px; }
+    .accordion-header { padding: 10px; background: #eee; cursor: pointer; }
+    .accordion-body { display: none; padding: 10px; }
+    .accordion.active .accordion-body { display: block; }
+    button { margin: 5px; }
+  </style>
+</head>
+<body>
+  <h1>Bus Dashboard</h1>
+
+  <div>
+    <label>Select Bus:</label>
+    <select id="busSelect">
+      <option value="">--Select--</option>
+      ${[...Array(12).keys()].map(i=>`<option value="${i+1}">Bus ${i+1}</option>`).join("")}
+    </select>
+    <input type="file" id="photoUpload">
+    <button onclick="uploadAttendee()">Upload</button>
+  </div>
+
+  <h2>Bus Summary</h2>
+  <div id="busSummary"></div>
+
+  <script>
+    const supabaseUrl = "YOUR_SUPABASE_URL";
+    const supabaseKey = "YOUR_SUPABASE_ANON_KEY";
+    const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+    async function uploadAttendee() {
+      const busNumber = document.getElementById('busSelect').value;
+      const file = document.getElementById('photoUpload').files[0];
+      if (!busNumber || !file) return alert("Select bus and photo first!");
+      
+      const fileName = file.name;
+      const { data, error } = await supabase.storage.from('attendees').upload(`${busNumber}/${fileName}`, file, { upsert: true });
+      if (error) return alert(error.message);
+
+      const publicUrl = supabase.storage.from('attendees').getPublicUrl(`${busNumber}/${fileName}`).data.publicUrl;
+
+      await supabase.from('attendees').insert([
+        { bus_number: busNumber, name: fileName.split('.')[0], image_url: publicUrl }
+      ]);
+      loadSummary();
+    }
+
+    async function loadSummary() {
+      const { data: attendees } = await supabase.from('attendees').select('*');
+      const summaryDiv = document.getElementById('busSummary');
+      summaryDiv.innerHTML = "";
+
+      for (let bus = 1; bus <= 12; bus++) {
+        const busAttendees = attendees.filter(a => a.bus_number == bus);
+        const div = document.createElement('div');
+        div.className = "accordion";
+        div.innerHTML = `
+          <div class="accordion-header" onclick="this.parentNode.classList.toggle('active')">
+            <strong>Bus ${bus}</strong> (${busAttendees.length} attendees)
+            <button onclick="deleteAll(${bus});event.stopPropagation()">Delete All</button>
+          </div>
+          <div class="accordion-body">
+            ${busAttendees.map(a => `
+              <div>
+                ${a.name} - ${a.status}
+                <button onclick="deleteOne(${a.id})">Delete</button>
+              </div>
+            `).join("")}
+          </div>
+        `;
+        summaryDiv.appendChild(div);
+      }
+    }
+
+    async function deleteOne(id) {
+      await supabase.from('attendees').delete().eq('id', id);
+      loadSummary();
+    }
+    async function deleteAll(bus) {
+      await supabase.from('attendees').delete().eq('bus_number', bus);
+      loadSummary();
+    }
+
+    loadSummary();
+  </script>
+</body>
+</html>

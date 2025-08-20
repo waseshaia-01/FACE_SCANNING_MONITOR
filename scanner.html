@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bus Face Scanner</title>
+  <script src="https://unpkg.com/@supabase/supabase-js"></script>
+  <script src="https://unpkg.com/face-api.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
+    video { border: 2px solid #333; border-radius: 10px; margin-top: 10px; }
+    #status { margin-top: 15px; font-weight: bold; }
+    button { margin-top: 20px; padding: 10px 15px; }
+  </style>
+</head>
+<body>
+  <h1>Bus Face Scanner</h1>
+  <video id="video" width="480" height="360" autoplay muted></video>
+  <div id="status">Loading models...</div>
+  <button onclick="location.href='dashboard.html'">Go to Dashboard</button>
+
+  <script>
+    // 🔹 Supabase config
+    const supabaseUrl = "YOUR_SUPABASE_URL";
+    const supabaseKey = "YOUR_SUPABASE_ANON_KEY";
+    const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+    const video = document.getElementById('video');
+    const statusDiv = document.getElementById('status');
+    let faceMatcher;
+
+    // Load face-api models
+    Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri('models'),
+      faceapi.nets.faceRecognitionNet.loadFromUri('models'),
+      faceapi.nets.faceLandmark68Net.loadFromUri('models')
+    ]).then(initScanner);
+
+    async function initScanner() {
+      statusDiv.innerText = "Loading attendees...";
+      await loadAttendees();
+      startVideo();
+    }
+
+    // Start camera
+    function startVideo() {
+      navigator.mediaDevices.getUserMedia({ video: {} })
+        .then(stream => { video.srcObject = stream })
+        .catch(err => console.error(err));
+      statusDiv.innerText = "Scanner Ready!";
+    }
+
+    // Load attendee photos from Supabase and compute face descriptors
+    async function loadAttendees() {
+      const { data: attendees, error } = await supabase.from('attendees').select('*');
+      if (error) { console.error(error); return; }
+
+      const labeledDescriptors = [];
+      for (const attendee of attendees) {
+        try {
+          const img = await faceapi.fetchImage(attendee.image_url);
+          const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+          if (!detections) continue;
+          labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(attendee.name, [detections.descriptor]));
+        } catch (err) {
+          console.warn("Failed to load image for:", attendee.name);
+        }
+      }
+      faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
+    }
+
+    // Continuously check faces from webcam
+    video.addEventListener('play', async () => {
+      const displaySize = { width: video.width, height: video.height };
+      faceapi.matchDimensions(video, displaySize);
+
+      setInterval(async () => {
+        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+          .withFaceLandmarks()
+          .withFaceDescriptors();
+
+        if (detections.length > 0 && faceMatcher) {
+          const bestMatch = faceMatcher.findBestMatch(detections[0].descriptor);
+          if (bestMatch.label !== "unknown") {
+            statusDiv.innerText = `✅ Recognized: ${bestMatch.label}`;
+            markScanned(bestMatch.label);
+          } else {
+            statusDiv.innerText = "❌ Unknown Face";
+          }
+        }
+      }, 2000);
+    });
+
+    // Update attendee status in Supabase
+    async function markScanned(name) {
+      await supabase.from('attendees')
+        .update({ status: 'Scanned' })
+        .eq('name', name);
+    }
+  </script>
+</body>
+</html>
